@@ -1,6 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from "@azure/functions"
 import * as dotenv from 'dotenv';
 import { QueueClient } from '@azure/storage-queue';
+import * as crypt from 'crypto';
 
 import { ConfigFile } from '../common/config-file';
 import { Config } from '../common/config';
@@ -34,12 +35,15 @@ const httpTrigger: AzureFunction = async function (context: Context, req: HttpRe
     const configString: string = await configFile.getConfigFile(settingId + '.json');
     const config: Config = JSON.parse(configString);
 
-    if (config.chatwork_webhook_signature !== headerSignature) {
+    const hmac = crypt.createHmac('sha256', new Buffer(config.chatwork_webhook_token, 'base64'));
+    const signature = hmac.update(JSON.stringify(req.body)).digest('base64');
+
+    if (signature !== headerSignature) {
         context.res = {
-            status: 200,
+            status: 400,
             body: 'Invalid signature',
         };
-
+        context.log('Invalid signature');
         return;
     }
 
@@ -51,9 +55,10 @@ const httpTrigger: AzureFunction = async function (context: Context, req: HttpRe
     }
     catch(e) {
         context.res = {
-            status: 200,
+            status: 400,
             body: 'Can not send message to storage queue',
         };
+        context.log('Can not send message to storage queue');
     }
 
     context.res = {
